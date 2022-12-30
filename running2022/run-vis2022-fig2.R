@@ -1,0 +1,198 @@
+library(data.table)
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(ggthemes)
+library(lubridate)
+library(RColorBrewer)
+library(hrbrthemes)
+library(ggtext)
+library(magrittr)
+library(geojsonsf)
+library(jsonlite)
+library(worldtilegrid)
+library(hotkeys)
+library(cowplot)
+library(patchwork)#双坐标
+library(animation)
+library(gganimate)
+
+#devtools::install_github("clauswilke/ggtext")
+
+setwd("e:/temp/running/running2022")
+
+#图2可视化
+
+data<-read_excel("running.xlsx") %>% 
+  na.omit() %>% 
+  purrr::set_names(c("date","time","distance","min","s","kj","heart","freq","step","place","item")) %>% 
+  arrange(date)
+
+names(data)
+str(data)
+
+####  弄个facet，看能做成动态图不
+####  分区底色
+
+#转换数值为时间格式
+num2time<-function(number){
+  m<-floor(number)
+  s<-floor((number-m)*60)
+  ifelse(nchar(s)==2,paste(m,":",s,sep=""),paste(m,":0",s,sep=""))
+}
+temp<-6.1
+
+num2time(temp)
+
+#每月一公里最快配速趋势图
+df<-data[,c(1,3,4,5)] %>% 
+  mutate(date=ymd(date)) %>% 
+  mutate(year=year(date)) %>% 
+  mutate(month=month(date)) %>% 
+  mutate(speed=(min*60+s)/(60*distance)) %>% 
+  data.table() %>% 
+  .[,.(speed1=min(speed),speed2=mean(speed),speed3=max(speed),distance=sum(distance)),by=c("year","month")] %>% 
+  mutate(speed11=num2time(speed1)) %>% 
+  mutate(speed21=num2time(speed2)) %>%
+  mutate(speed31=num2time(speed3)) %>%
+  mutate(date=paste(year,month,15,sep="-")) %>% 
+  mutate(date=ymd(date)) %>% 
+  select(date,speed1,speed2,speed3,speed11,speed21,speed31,distance) %>% 
+  mutate(year=year(date)) %>% 
+  mutate(date=as.POSIXct(date)) %>% 
+  mutate(speed31=case_when(speed3<8~"",T~speed31))
+
+df %>% 
+  data.table() %>% 
+  .[,sum(distance),by=year]
+
+
+windowsFonts(
+  mini = windowsFont("迷你简凌波"),
+  minij = windowsFont("迷你简瘦金书"),
+  fF = windowsFont("腾祥范笑歌楷书繁"),
+  fJ = windowsFont("腾祥范笑歌楷书简"),
+  bF = windowsFont("腾祥伯当行楷繁"),
+  bJ = windowsFont("腾祥伯当行楷简"),
+  en = windowsFont("Times New Roman")
+)
+
+ggplot(df,aes(x=date))+
+  geom_line(aes(y=speed3),color="chocolate1",size=1)+
+  geom_line(aes(y=speed2),color="green",size=1)+
+  geom_point(aes(y=speed2),size=0.2)+
+  geom_line(aes(y=speed1),color="red",size=1)+
+  geom_point(aes(y=speed1),size=0.2)+
+  geom_point(aes(y=speed3),size=0.2)+
+  geom_text(aes(y=speed3,label=speed31))+
+  #geom_text(aes(y=speed2,label=speed21))+
+  geom_text(aes(y=speed1,label=speed11))+
+  #3.最快纪录标记解释
+  geom_text(aes(x=as.POSIXct("2021-4-22"),y=4.4,label="2021.4.22,跑步机6公里,配速4:33"))+
+  geom_text(aes(x=as.POSIXct("2020-10-31"),y=4.65,label="2020.10.31,田径场5公里,配速4:49"))+
+  geom_segment(mapping = aes(x=as.POSIXct("2021-3-15"), y=6.7, 
+                             xend=as.POSIXct("2021-6-15"), yend=5), 
+               arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_text(aes(x=as.POSIXct("2021-3-15"),y=7,label="2021.6.21\n东湖10公里,配速4:55"))+
+  #1.起步5-6-7分割线
+  geom_vline(xintercept=as.POSIXct("2020-11-19"),size=0.5,linetype="dashed")+
+  geom_text(aes(x=as.POSIXct("2020-11-19"),y=10,label="2020.11.20"),family="bJ",size=5)+
+  geom_vline(xintercept=as.POSIXct("2021-9-1"),size=0.5,linetype="dashed")+
+  geom_text(aes(x=as.POSIXct("2021-9-1"),y=10,label="2021.09.01"),family="bJ",size=5)+
+  #每年分割线
+  geom_vline(xintercept=as.POSIXct("2020-1-1"),size=1,linetype="solid")+
+  geom_vline(xintercept=as.POSIXct("2021-1-1"),size=1,linetype="solid")+
+  geom_vline(xintercept=as.POSIXct("2022-1-1"),size=1,linetype="solid")+
+  #2.分割箭头和标签
+  #起步5公里标签箭头
+  geom_text(aes(x=as.POSIXct("2020-7-1"),y=10,label="5公里起"),family="bJ",size=5)+
+  geom_segment(mapping = aes(x=as.POSIXct("2020-10-1"), y=10, 
+                             xend=as.POSIXct("2020-9-1"), yend=10),
+               size=1.5,arrow = arrow(length=unit(0.2, "cm"))) +
+  #起步6公里标签箭头
+  geom_text(aes(x=as.POSIXct("2021-4-15"),y=10,label="6公里起"),family="bJ",size=5)+
+  geom_segment(mapping = aes(x=as.POSIXct("2021-1-15"), y=10, 
+                             xend=as.POSIXct("2021-2-15"), yend=10),
+               size=1.5,arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_segment(mapping = aes(x=as.POSIXct("2021-7-15"), y=10, 
+                             xend=as.POSIXct("2021-6-15"), yend=10),
+               size=1.5,arrow = arrow(length=unit(0.2, "cm"))) +
+  #起步7公里标签箭头
+  geom_text(aes(x=as.POSIXct("2021-12-25"),y=10,label="以七为期，娶卿为妻"),family="bJ",size=3,color="ghostwhite")+
+  geom_text(aes(x=as.POSIXct("2021-12-25"),y=10,label="7公里起"),family="bJ",size=5)+
+  geom_segment(mapping = aes(x=as.POSIXct("2021-10-25"), y=10, 
+                            xend=as.POSIXct("2021-11-15"), yend=10),
+               size=1.5,arrow = arrow(length=unit(0.2, "cm"))) +
+  #4.每年公里数
+  geom_segment(mapping = aes(x=as.POSIXct("2019-5-4"), y=4,
+                            xend=as.POSIXct("2019-12-28"), yend=4),
+               size=0.7,arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_segment(mapping = aes(x=as.POSIXct("2020-1-3"), y=4,
+                            xend=as.POSIXct("2020-12-28"), yend=4),
+               size=0.7,arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_segment(mapping = aes(x=as.POSIXct("2021-1-3"), y=4,
+                            xend=as.POSIXct("2021-12-28"), yend=4),
+               size=0.7,arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_segment(mapping = aes(x=as.POSIXct("2022-1-2"), y=4,
+                             xend=as.POSIXct("2022-12-31"), yend=4),
+               size=0.7,arrow = arrow(length=unit(0.2, "cm"))) +
+  geom_text(aes(x=as.POSIXct("2019-10-1"),y=4.15,label="2019年:99.92公里"),family="bJ",size=5)+
+  geom_text(aes(x=as.POSIXct("2020-6-15"),y=4.15,label="2020年:585.96公里"),family="bJ",size=5)+
+  geom_text(aes(x=as.POSIXct("2021-6-15"),y=4.15,label="2021年:930.97公里"),family="bJ",size=5)+
+  geom_text(aes(x=as.POSIXct("2022-6-15"),y=4.15,label="2022年:1000公里"),family="bJ",size=5)+
+  #5.月累计跑量
+  geom_bar(aes(y=distance/30),stat = "identity",fill = "dodgerblue",alpha=0.1)+
+  geom_text(aes(y=distance/30,label=distance))+
+  geom_bar(data=data,aes(x=date,y=distance/30),stat = "identity",fill = "dodgerblue",alpha=0.5)+
+  #第一跑
+  geom_text(aes(x=as.POSIXct("2019-5-4"),y=1.3,label="2019.5.4 长安半马\n振哥带我第一跑"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2019-7-22"),y=0.7,label="2019.7.22\n小米4第一条记录"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2019-10-7"),y=3,label="2019.10.7备赛4人\n陕师大-西工大21公里\n跑完安排鸭掌门"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2019-10-20"),y=1.5,label="2019.10.20 3人跑西马\n振哥完赛,2人29.46公里"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2021-1-3"),y=1.2,label="2021.1.3\n东湖21公里\n508骑行"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2021-4-11"),y=1.1,label="2021.4.11\n重庆璧山半马赛"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2021-10-24"),y=1.1,label="2021.10.24\n武汉线上半马赛"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2021-12-26"),y=1.5,label="2021.12.26\n迎接2022年\n22公里"),family="bJ",size=4)+
+  geom_text(aes(x=as.POSIXct("2022-6-11"),y=1.1,label="2022.6.11\n端午线上半马赛"),family="bJ",size=4)+
+  #attention
+  geom_text(aes(x=as.POSIXct("2021-6-23"),y=8.8,label="2021.6.23\n拾到漂流瓶一枚"),family="bJ",size=4,color="red")+
+  geom_segment(mapping = aes(x=as.POSIXct("2021-6-23"), y=8.5, 
+                             xend=as.POSIXct("2021-6-23"), yend=5.8),
+               size=1.3,color="red",linetype="dashed",arrow = arrow(length=unit(0.5, "cm"))) +
+  geom_text(aes(x=as.POSIXct("2022-5-15"),y=7.3,label="漂流瓶变拖油瓶......"),family="bJ",size=4,color="red",angle=15)+
+  geom_segment(mapping = aes(x=as.POSIXct("2021-6-23"), y=5.8, 
+                             xend=as.POSIXct("2022-12-15"), yend=7.9),
+               size=1.3,color="red",linetype="dashed",arrow = arrow(length=unit(0.5, "cm"))) +
+  #上图例
+  geom_label(aes(x=as.POSIXct("2019-8-15"),y=6.5,label="月最快配速"),family="bJ",size=4,color="red")+
+  geom_label(aes(x=as.POSIXct("2019-8-15"),y=7.5,label="月平均配速"),family="bJ",size=4,color="green")+
+  geom_label(aes(x=as.POSIXct("2019-8-15"),y=8.5,label="月最慢配速"),family="bJ",size=4,color="chocolate1")+
+  #下图例
+  geom_label(aes(x=as.POSIXct("2020-7-15"),y=3.7,label="月跑累计公里数"),
+             family="bJ",size=4,fill = "aliceblue")+
+  geom_label(aes(x=as.POSIXct("2020-7-15"),y=0.4,label="日跑公里数"),
+             family="bJ",size=4,colour = "dodgerblue")+
+  scale_y_continuous(
+    name = "月最快、平均、最慢配速(分/公里)",
+    sec.axis = sec_axis(~.*30, name="月累计公里数/km")
+  ) + 
+  scale_x_datetime(date_labels = "%m",
+                   date_breaks = "1 month",
+                   date_minor_breaks = "1 month")+
+  xlab("时间")+
+  theme_bw()+
+  labs(title = "2022年跑步年度总结",
+       caption = "1旬跑4个7公里=1年跑1千+\n数据和代码详见https://github.com/ZuoRX/running"
+       )+
+  theme(axis.text.x = element_text(hjust = -1))
+
+ggsave("2022年跑步图2.png",dpi=300,width=40, height=24,units="cm")
+
+#可以考虑加上次数,刻度标签往右一点
+
+
+#动图思路
+#1.多个png，做成gif
+#2.柱状图、折线图，逐月变化
+#3.地图背景
+
